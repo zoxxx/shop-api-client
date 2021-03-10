@@ -1,9 +1,9 @@
 var article = {
     apiServer: API_URL + ':' + API_PORT,
+    token: '',
     listContainerId: 'articles-list',
     addButtonContainerId: 'add-button-container',
     loggedIn: false,
-    formMode: 'add',
     addButtonTemplate: `
         <div class="btn-group">
             <button class="btn btn-outline-success btn-sm mx-1" type="button" id="add-button">Add Article</button>
@@ -20,13 +20,18 @@ var article = {
                     </div>
                     <div class="modal-body">
                         <div class="form-group">
-                            <input type="text" class="form-control" id="article-title-input" placeholder="Title">
-                            <textarea class="form-control my-1" id="article-summary-input" rows="3" placeholder="Summary"></textarea>
+                            <input type="hidden" id="article-id-input" value="" />
+                            <input type="text" class="form-control" id="article-title-input" placeholder="Title" required>
+                            <textarea class="form-control my-1" id="article-summary-input" rows="3" placeholder="Summary" required></textarea>
                             <div class="input-group mb-2 mr-sm-2">
                                 <div class="input-group-prepend">
                                     <div class="input-group-text">€</div>
                                 </div>
-                                <input type="text" class="form-control" id="article-price" placeholder="Price">
+                                <input type="text" class="form-control" id="article-price-input" placeholder="Price" required>
+                            </div>
+                            <div class="input-group mb-3">
+                                <label class="input-group-text" for="image-input">Upload Image</label>
+                                <input type="file" class="form-control" id="image-input">
                             </div>
                         </div>
                     </div>
@@ -42,11 +47,13 @@ var article = {
         document.addEventListener('logged-in', evt => {
             console.log('received logged in event');
             this.loggedIn = true;
+            this.token = evt.detail;
             this.showList();
         });
         document.addEventListener('logged-out', evt => {
             console.log('received logged out event');
             this.loggedIn = false;
+            this.token = '';
             this.showList();
         });
         this.showList();
@@ -57,13 +64,6 @@ var article = {
 
         if (this.loggedIn) {
             document.getElementById(this.addButtonContainerId).innerHTML = this.addButtonTemplate;
-            /*
-            // save button na formi za add i edit
-            document.getElementById('save-button').addEventListener('click', evt => {
-                console.log('save button form: ', this.formMode);
-                this.save();
-            });
-            */
         } else {
             document.getElementById(this.addButtonContainerId).innerHTML = '';
         }
@@ -77,7 +77,7 @@ var article = {
             let articleItem = `
                 <div class="card-deck mb-3 text-left">
                     <div class="card mb-4 box-shadow">
-                        <img class="card-img-top" src="${article.photo}" alt="Teddy bear">
+                        <img class="card-img-top" src="${this.apiServer}/${article.photo}" alt="Teddy bear">
                         <div class="card-body">
                             <h3 class="card-title pricing-card-title">${article.title}</h3>
                             <h6 class="card-subtitle mb-2 text-muted">Price: ${article.price} €</h6>
@@ -108,7 +108,7 @@ var article = {
         document.getElementById(this.listContainerId).innerHTML = articlesBlock;
         if (this.loggedIn) {
             document.getElementById('add-button').addEventListener('click', evt => {
-                this.add();
+                this.showAddForm();
             });
         }
         articlesIds.forEach(id => {
@@ -119,7 +119,7 @@ var article = {
             });
             if (this.loggedIn) {
                 document.getElementById('edit-' + id).addEventListener('click', evt => {
-                    this.edit(id);
+                    this.showEditForm(id);
                 });
                 document.getElementById('delete-' + id).addEventListener('click', evt => {
                     this.delete(id);
@@ -166,35 +166,129 @@ var article = {
             }
         });
     },
-    add: function () {
+    showAddForm: function () {
         console.log('add article');
+        document.getElementById('article-form-container').innerHTML = this.formTemplate;
+
         var articleForm = new bootstrap.Modal(document.getElementById('article-form'), {
             keyboard: false,
             backdrop: 'static'
         });
         articleForm.show();
-        this.formMode = 'add';
 
-        document.getElementById('save-button').addEventListener('click', this.save);
+        document.getElementById('save-button').addEventListener('click', this.save.bind(this));
 
-        document.getElementById('article-form').addEventListener('hide.bs.modal', evt => {
+        document.getElementById('article-form').addEventListener('hidden.bs.modal', evt => {
             console.log('modal hidden');
-            articleForm.dispose();
+            document.getElementById('article-form-container').innerHTML = '';
         });
     },
-    edit: function (id) {
+    showEditForm: function (id) {
         console.log('edit id: ', id);
-        var articleForm = new bootstrap.Modal(document.getElementById('article-form'), {
-            keyboard: false,
-            backdrop: 'static'
+
+        fetch(this.apiServer + "/article/" + id)
+            .then(response => response.json())
+            .then(article => {
+                console.log(article);
+                document.getElementById('article-form-container').innerHTML = this.formTemplate;
+                document.getElementById('article-id-input').value = id;
+                document.getElementById('article-title-input').value = article.title;
+                document.getElementById('article-summary-input').value = article.summary;
+                document.getElementById('article-price-input').value = article.price;
+
+                var articleForm = new bootstrap.Modal(document.getElementById('article-form'), {
+                    keyboard: false,
+                    backdrop: 'static'
+                });
+                articleForm.show();
+
+                document.getElementById('save-button').addEventListener('click', this.save.bind(this));
+            
+                document.getElementById('article-form').addEventListener('hidden.bs.modal', evt => {
+                    console.log('modal hidden');
+                    document.getElementById('article-form-container').innerHTML = '';
+                });
         });
-        articleForm.show();
-        this.formMode = 'edit';
     },
     delete: function (id) {
         console.log('delete id: ', id);
+        fetch(this.apiServer + '/article/' + id, { 
+            method: 'DELETE',
+            headers: {
+                'Authorization': 'Bearer: ' + this.token
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                alert('Article deleted!');
+                this.showList();
+            } else {
+                response.json().then(data => {
+                    alert(data.message);
+                });
+            }
+        });
     },
     save: function () {
         console.log('save');
+        let articleId = document.getElementById('article-id-input').value.trim();
+        let articleTitle = document.getElementById('article-title-input').value.trim(); 
+        let articleSummary = document.getElementById('article-summary-input').value.trim();
+        let articlePrice = document.getElementById('article-price-input').value.trim();
+        let img = document.getElementById('image-input');
+
+        var form = new FormData();
+        console.log(img);
+        if (img.files.length > 0 ) {
+            // add img to FormData
+            console.log("adding image");
+            form.append('article_photo', img.files[0]);
+            console.log(img.files[0].name, img.files[0].size, img.files[0].type);
+        }
+        form.append('title', articleTitle);
+        form.append('summary', articleSummary);
+        form.append('price', articlePrice);
+
+        if (articleId != "") {
+            fetch(this.apiServer + '/article/' + articleId, { 
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Bearer: ' + this.token
+                },
+                body: form
+            })
+            .then(response => {
+                if (response.ok) {
+                    alert('Article saved!');
+                    bootstrap.Modal.getInstance(document.getElementById('article-form')).hide();
+                    this.showList();
+                } else {
+                    response.json().then(data => {
+                        alert(data.message);
+                    });
+                }
+            });
+        } else {
+            fetch(this.apiServer + '/article', { 
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer: ' + this.token
+                },
+                body: form
+            })
+            .then(response => {
+                if (response.ok)  {
+                    alert('New article added!');
+                    bootstrap.Modal.getInstance(document.getElementById('article-form')).hide();
+                    this.showList();
+                } else {
+                    response.json().then(data => {
+                        alert(data.message);
+                    });
+                }
+            });
+        }
+        
+        console.log(articleId, articleTitle, articleSummary, articlePrice);
     }
 };

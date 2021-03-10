@@ -1,5 +1,6 @@
 var user = {
     apiServer: API_URL + ':' + API_PORT,
+    token: '',
     authButtonsContainerId: 'auth-buttons',
     authButtonsTemplate: `
         <div class="btn-group">
@@ -38,6 +39,13 @@ var user = {
             </div>
         </div>`.trim(),
     logoutButtonTemplate: '<button class="btn btn-outline-success btn-sm mx-1" type="button" id="logout-button">Logout</button>',
+    init: function () {
+        if (this.isLoggedIn()) {
+            this.dispatchLoggedInEvent(this.token);
+        } else {
+            user.showAuthButtons();
+        }
+    },
     showAuthButtons: function () {
         document.getElementById(this.authButtonsContainerId).innerHTML = this.authButtonsTemplate;
         document.getElementById('form-login').addEventListener('submit', evt => {
@@ -95,7 +103,7 @@ var user = {
                         localStorage.setItem('token', res.token);
                         //this.exitAuthAndMsg('Login success. You may access protected route.');
                         //book.showBookPage();
-                        this.dispatchLoggedInEvent();
+                        this.dispatchLoggedInEvent(res.token);
                         break;
                     case 401:
                         //console.log(xhttp.responseText);
@@ -149,7 +157,7 @@ var user = {
                     case 200:
                         var res = JSON.parse(xhttp.responseText);
                         console.log(res);
-                        this.dispatchLoggedInEvent();
+                        this.dispatchLoggedInEvent(res.token);
                         break;
                     case 403:
                         var res = JSON.parse(xhttp.responseText);
@@ -167,12 +175,12 @@ var user = {
         xhttp.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
         xhttp.send(JSON.stringify(user));
     },
-    dispatchLoggedInEvent: function () {
+    dispatchLoggedInEvent: function (token) {
         document.getElementById(this.authButtonsContainerId).innerHTML = this.logoutButtonTemplate;
         document.getElementById('logout-button').addEventListener('click', evt => {
             this.logout();
         });
-        document.dispatchEvent(new Event('logged-in'));
+        document.dispatchEvent(new CustomEvent('logged-in', { detail: token }));
     },
     showError: function (msg, id) {
         var errorAlert = document.getElementById(id);
@@ -224,13 +232,12 @@ var user = {
         var seconds = Math.round(date.getTime() / 1000);
         console.log(seconds);
         if (payload.exp > seconds) {
+            this.token = token;
             console.log("Not expired!");
             return true;
-            // book.showBookPage();
         }
         else {
             console.log("Token expired!");
-            // user.showLogin();
             return false;
         }
     }
